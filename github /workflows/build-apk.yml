@@ -1,0 +1,84 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      appName:
+        description: 'اسم التطبيق'
+        required: true
+        type: string
+      packageId:
+        description: 'معرف الحزمة'
+        required: true
+        type: string
+      webUrl:
+        description: 'رابط الموقع'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      
+      - name: Create Capacitor Project
+        run: |
+          mkdir -p app
+          cd app
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npx cap init "${{ github.event.inputs.appName }}" "${{ github.event.inputs.packageId }}" --web-dir=www
+          
+          # إنشاء ملف index.html
+          mkdir -p www
+          cat > www/index.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+          <body style="margin:0;padding:0;">
+            <iframe src="${{ github.event.inputs.webUrl }}" style="width:100%;height:100vh;border:none;"></iframe>
+          </body>
+          </html>
+          EOF
+          
+          npx cap add android
+          npx cap copy
+      
+      - name: Build APK
+        run: |
+          cd app/android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+      
+      - name: Upload APK to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1
+          files: app/android/app/build/outputs/apk/release/app-release.apk
+          name: "تطبيق ${{ github.event.inputs.appName }}"
+          body: |
+            ✅ تم بناء التطبيق بنجاح
+            - الاسم: ${{ github.event.inputs.appName }}
+            - الحزمة: ${{ github.event.inputs.packageId }}
+            - الرابط: ${{ github.event.inputs.webUrl }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
